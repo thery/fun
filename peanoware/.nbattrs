@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE attributes PUBLIC "-//NetBeans//DTD DefaultAttributes 1.0//EN" "http://www.netbeans.org/dtds/attributes-1_0.dtd">
+<attributes version="1.0">
+    <fileobject name="NdManifest.">
+        <attr name="org.netbeans.modules.text.IsTextFile" boolvalue="true"/>
+    </fileobject>
+    <fileobject name="nd">
+        <attr name="OpenIDE-Folder-Order" stringvalue="ModPoint.java/Header.java/HeaderListener.java/Main.java/Pair.java/Pane.java/PaneListener.java/Tree.java"/>
+    </fileobject>
+</attributes>
