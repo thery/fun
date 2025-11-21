@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sierpinski Triangle Summation Animation</title>
+  <title>Triangle Summation Animation</title>
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -22,7 +22,7 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const SierpinskiTriangle = () => {
+    const Triangle = () => {
       const canvasRef = useRef(null);
       const [isAnimating, setIsAnimating] = useState(false);
       const [depth, setDepth] = useState(10);
@@ -54,7 +54,7 @@
         return [(x1 + x2) / 2, (y1 + y2) / 2];
       };
 
-      const animateSierpinski = async (ctx, x1, y1, x2, y2, x3, y3, currentDepth, maxDepth, currentStep) => {
+      const animateTriangle = async (ctx, x1, y1, x2, y2, x3, y3, currentDepth, maxDepth, currentStep) => {
         if (currentDepth >= maxDepth) return currentStep;
 
         drawTriangle(ctx, x1, y1, x2, y2, x3, y3, true);
@@ -75,7 +75,7 @@
         await new Promise(resolve => setTimeout(resolve, 500));
 
         // Only animate the top triangle (keeps it simple and matches your original intent)
-        return await animateSierpinski(ctx, x1, y1, mx1, my1, mx3, my3, currentDepth + 1, maxDepth, currentStep);
+        return await animateTriangle(ctx, x1, y1, mx1, my1, mx3, my3, currentDepth + 1, maxDepth, currentStep);
       };
 
       const startAnimation = async () => {
@@ -102,7 +102,7 @@
         const x3 = x1 + size / 2;
         const y3 = y2;
 
-        await animateSierpinski(ctx, x1, y1, x2, y2, x3, y3, 0, depth, 0);
+        await animateTriangle(ctx, x1, y1, x2, y2, x3, y3, 0, depth, 0);
         
         setIsAnimating(false);
         setIsComplete(true);
@@ -200,7 +200,7 @@
 
     // Render the app
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<SierpinskiTriangle />);
+    root.render(<Triangle />);
   </script>
 </body>
 </html>
