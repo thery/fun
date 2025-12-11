@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nicomachus' Theorem</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 1400px;
+            width: 100%;
+        }
+        h1 { text-align: center; color: #333; margin-top: 0; }
+        .theorem {
+            text-align: center;
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            background: #667eea;
+            color: white;
+            transition: all 0.3s;
+        }
+        button:hover { background: #5568d3; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
+        button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        label { font-weight: bold; color: #333; }
+        input[type="number"] {
+            padding: 8px;
+            font-size: 16px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            width: 60px;
+        }
+        #mainCanvas {
+            display: block;
+            margin: 0 auto;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: #1a1a2e;
+        }
+        canvas {
+            display: block;
+        }
+        .info {
+            text-align: center;
+            font-size: 18px;
+            color: #333;
+            margin-top: 20px;
+            line-height: 1.6;
+        }
+        .equation {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #667eea;
+        }
+        /* Camera control sphere overlay */
+        #helperCanvas {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            background: rgba(26,26,46,0.8);
+            cursor: move;
+            pointer-events: all;
+        }
+        #canvasContainer {
+            position: relative;
+            min-height: 600px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Nicomachus' Theorem</h1>
+        <div class="theorem">1³ + 2³ + 3³ + ... + n³ = (1 + 2 + 3 + ... + n)²</div>
+        <div class="controls">
+            <label for="nValue">n value:</label>
+            <input type="number" id="nValue" min="1" max="6" value="4">
+            <button onclick="reset()">Reset</button>
+            <button onclick="start()" id="animateBtn">Start Animation</button>
+        </div>
+        <div id="canvasContainer"></div>
+        <div class="info" id="info">Click "Start Animation" to see the proof!</div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // ========== GLOBAL STATE ==========
+        let n=4; // Current n value for the theorem
+        let anim=false; // Is animation currently running?
+        let placed=[]; // Array of cubes that have been placed in the grid
+        let flying=[]; // Array of cubes currently flying from source to grid
+        
+        // Main scene objects
+        let scene, cam, rend, srcGrp, gridGrp;
+        
+        // Camera control variables
+        let camAngle=0; // Rotation angle around scene (degrees)
+        let camHeight=1; // Height multiplier for camera
+        let camZoom=1.8; // Distance multiplier for camera
+        
+        // Helper sphere (camera control widget) objects
+        let helperScene, helperCam, helperRend, helperSphere, isDragging=false;
+        
+        // Color palette for each cube (pale, distinct colors)
+        const colors=[0xFFB3BA,0xBAE1FF,0xFFDFBA,0xBAFFC9,0xE0BBE4,0xFFF5BA,0xD4F1F4,0xFFCCE5];
+        
+        // ========== UTILITY FUNCTIONS ==========
+        
+        // Async sleep function
+        const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+        
+        // Easing function for smooth animations (ease-in-out cubic)
+        const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+        
+        // ========== MAIN SCENE INITIALIZATION ==========
+        
+        function init(){
+            const c=document.getElementById('canvasContainer');
+            c.innerHTML=''; // Clear any existing content
+            
+            // Create main scene
+            scene=new THREE.Scene();
+            scene.background=new THREE.Color(0x1a1a2e);
+            
+            // Setup camera
+            const s=(n*(n+1))/2; // Calculate sum 1+2+...+n for positioning
+            cam=new THREE.PerspectiveCamera(50,2,.1,1e3);
+            updateCam(); // Position camera based on current settings
+            
+            // Setup renderer
+            rend=new THREE.WebGLRenderer({antialias:true});
+            rend.setSize(1200,600);
+            c.appendChild(rend.domElement);
+            
+            // Add lighting (from sides to preserve colors)
+            scene.add(new THREE.AmbientLight(0xffffff,.7));
+            const l1=new THREE.DirectionalLight(0xffffff,.6);
+            l1.position.set(-15,5,10);
+            scene.add(l1);
+            const l2=new THREE.DirectionalLight(0xffffff,.4);
+            l2.position.set(15,3,-10);
+            scene.add(l2);
+            
+            // Create group for source cube (rotating on left)
+            srcGrp=new THREE.Group();
+            srcGrp.position.set(-6,3,s/2);
+            scene.add(srcGrp);
+            
+            // Create group for grid and frame
+            gridGrp=new THREE.Group();
+            scene.add(gridGrp);
+            
+            makeFrame(); // Build the wooden tangram frame
+            initHelper(); // Initialize camera control sphere
+            animate(); // Start animation loop
+        }
+        
+        // ========== WOODEN FRAME CONSTRUCTION ==========
+        
+        function makeFrame(){
+            const s=(n*(n+1))/2; // Size of the square grid
+            const t=.5; // Thickness of wood frame
+            const h=1; // Height of frame walls
+            
+            // Wood material
+            const wood=new THREE.MeshPhongMaterial({color:0x8B4513,shininess:30});
+            
+            // Helper to add frame pieces
+            const add=(g,x,y,z)=>{
+                const m=new THREE.Mesh(g,wood);
+                m.position.set(x,y,z);
+                gridGrp.add(m);
+            };
+            
+            // Add four walls of the square frame
+            add(new THREE.BoxGeometry(t,h,s+t*2),-t/2,h/2,s/2); // Left wall
+            add(new THREE.BoxGeometry(t,h,s+t*2),s+t/2,h/2,s/2); // Right wall
+            add(new THREE.BoxGeometry(s,h,t),s/2,h/2,-t/2); // Back wall
+            add(new THREE.BoxGeometry(s,h,t),s/2,h/2,s+t/2); // Front wall
+            
+            // Add base (floor of the tangram box)
+            const base=new THREE.Mesh(
+                new THREE.PlaneGeometry(s,s),
+                new THREE.MeshPhongMaterial({color:0xD2B48C,side:THREE.DoubleSide})
+            );
+            base.rotation.x=-Math.PI/2;
+            base.position.set(s/2,0,s/2);
+            gridGrp.add(base);
+            
+            // Add grid lines on the base
+            const lm=new THREE.LineBasicMaterial({color:0x8B7355});
+            for(let i=0;i<=s;i++){
+                // Horizontal grid lines
+                const h=new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(0,.01,i),
+                        new THREE.Vector3(s,.01,i)
+                    ]),lm
+                );
+                gridGrp.add(h);
+                
+                // Vertical grid lines
+                const v=new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(i,.01,0),
+                        new THREE.Vector3(i,.01,s)
+                    ]),lm
+                );
+                gridGrp.add(v);
+            }
+        }
+        
+        // ========== SOURCE CUBE CREATION ==========
+        
+        function makeCube(sz,col){
+            srcGrp.clear(); // Remove any existing cube
+            const off=(sz-1)/2; // Offset to center the cube
+            const cubes=[];
+            
+            // Create sz×sz×sz unit cubes
+            for(let x=0;x<sz;x++)
+                for(let y=0;y<sz;y++)
+                    for(let z=0;z<sz;z++){
+                        const g=new THREE.BoxGeometry(1,1,1);
+                        const m=new THREE.Mesh(g,new THREE.MeshPhongMaterial({color:col,shininess:100}));
+                        
+                        // Add black edges to each unit cube
+                        m.add(new THREE.LineSegments(
+                            new THREE.EdgesGeometry(g),
+                            new THREE.LineBasicMaterial({color:0})
+                        ));
+                        
+                        m.position.set(x-off,y-off,z-off);
+                        srcGrp.add(m);
+                        cubes.push(m);
+                    }
+            return cubes;
+        }
+        
+        // ========== CAMERA CONTROL HELPER SPHERE ==========
+        
+        function initHelper(){
+            // Create overlay canvas for helper sphere
+            const canvas=document.createElement('canvas');
+            canvas.id='helperCanvas';
+            canvas.width=120;
+            canvas.height=120;
+            document.getElementById('canvasContainer').appendChild(canvas);
+            
+            // Create separate scene for helper
+            helperScene=new THREE.Scene();
+            helperScene.background=new THREE.Color(0x1a1a2e);
+            helperCam=new THREE.PerspectiveCamera(50,1,.1,100);
+            helperCam.position.set(0,0,3);
+            helperRend=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+            helperRend.setSize(120,120);
+            
+            // Create blue control sphere
+            const sphereGeom=new THREE.SphereGeometry(.6,32,32);
+            const sphereMat=new THREE.MeshPhongMaterial({color:0x667eea,shininess:100});
+            helperSphere=new THREE.Mesh(sphereGeom,sphereMat);
+            helperScene.add(helperSphere);
+            
+            // Add wireframe overlay
+            const wireGeom=new THREE.SphereGeometry(.65,16,16);
+            const wireMat=new THREE.MeshBasicMaterial({color:0xffffff,wireframe:true,transparent:true,opacity:0.4});
+            const wire=new THREE.Mesh(wireGeom,wireMat);
+            helperScene.add(wire);
+            
+            // Add equatorial ring
+            const ringGeom=new THREE.TorusGeometry(.7,.04,16,32);
+            const ringMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.3});
+            const ring=new THREE.Mesh(ringGeom,ringMat);
+            ring.rotation.x=Math.PI/2;
+            helperScene.add(ring);
+            
+            // Add lighting to helper scene
+            helperScene.add(new THREE.AmbientLight(0xffffff,.6));
+            const light=new THREE.DirectionalLight(0xffffff,.8);
+            light.position.set(2,2,2);
+            helperScene.add(light);
+            
+            // Mouse event handlers for helper sphere
+            canvas.addEventListener('mousedown',e=>{
+                e.stopPropagation();
+                isDragging=true;
+                handleHelper(e);
+            });
+            canvas.addEventListener('mousemove',e=>{
+                e.stopPropagation();
+                if(isDragging)handleHelper(e);
+            });
+            canvas.addEventListener('mouseup',e=>{
+                e.stopPropagation();
+                isDragging=false;
+            });
+            canvas.addEventListener('mouseleave',()=>isDragging=false);
+            
+            // Wheel handler for zoom
+            canvas.addEventListener('wheel',e=>{
+                e.preventDefault();
+                e.stopPropagation();
+                camZoom=Math.max(1,Math.min(3,camZoom+(e.deltaY>0?.1:-.1)));
+                updateCam();
+            });
+            
+            // Double-click to reset camera
+            canvas.addEventListener('dblclick',e=>{
+                e.stopPropagation();
+                resetCam();
+            });
+            
+            animateHelper(); // Start helper animation loop
+        }
+        
+        // Handle mouse interaction with helper sphere
+        function handleHelper(e){
+            const rect=e.target.getBoundingClientRect();
+            // Convert mouse position to normalized coordinates (-1 to 1)
+            const x=((e.clientX-rect.left)/rect.width)*2-1;
+            const y=-((e.clientY-rect.top)/rect.height)*2+1;
+            
+            // Update camera angle and height based on mouse position
+            camAngle=Math.atan2(x,y)*180/Math.PI;
+            camHeight=Math.max(.5,Math.min(2,1+y*.8));
+            updateHelper();
+            updateCam();
+        }
+        
+        // Update helper sphere rotation to match camera angle
+        function updateHelper(){
+            if(helperSphere){
+                helperSphere.rotation.y=-camAngle*Math.PI/180;
+                helperSphere.rotation.x=(camHeight-1)*0.8;
+            }
+        }
+        
+        // Animation loop for helper sphere
+        function animateHelper(){
+            requestAnimationFrame(animateHelper);
+            if(!isDragging)updateHelper(); // Keep sphere synced with camera
+            helperRend.render(helperScene,helperCam);
+        }
+        
+        // ========== CAMERA CONTROL ==========
+        
+        function updateCam(){
+            const s=(n*(n+1))/2;
+            const rad=camAngle*Math.PI/180;
+            const dist=s*camZoom;
+            // Position camera in a circle around the scene
+            cam.position.set(Math.sin(rad)*dist*0.5,s*camHeight,Math.cos(rad)*dist);
+            cam.lookAt(s/4,0,s/2); // Look at center of grid
+        }
+        
+        function resetCam(){
+            camAngle=0;
+            camHeight=1;
+            camZoom=1.8;
+            updateCam();
+        }
+        
+        // ========== MAIN ANIMATION LOOP ==========
+        
+        function animate(){
+            requestAnimationFrame(animate);
+            
+            // Rotate source cube
+            if(srcGrp)srcGrp.rotation.y+=.005;
+            
+            // Update all flying cubes
+            for(let i=flying.length-1;i>=0;i--){
+                const c=flying[i];
+                c.progress+=c.speed;
+                
+                if(c.progress>=1){
+                    // Cube has reached destination
+                    scene.remove(c.mesh);
+                    
+                    // Create final cube at destination
+                    const g=new THREE.BoxGeometry(1,1,1);
+                    const m=new THREE.Mesh(g,new THREE.MeshPhongMaterial({color:c.color,shininess:100}));
+                    m.add(new THREE.LineSegments(
+                        new THREE.EdgesGeometry(g),
+                        new THREE.LineBasicMaterial({color:0})
+                    ));
+                    m.position.copy(c.target);
+                    m.position.y=.5; // Place at proper height inside frame
+                    gridGrp.add(m);
+                    
+                    flying.splice(i,1);
+                }else{
+                    // Cube is still flying - update position along arc
+                    const t=ease(c.progress);
+                    const p=new THREE.Vector3().lerpVectors(c.start,c.target,t);
+                    // Add arc height (cubes fly over the frame)
+                    p.y+=Math.sin(c.progress*Math.PI)*5;
+                    c.mesh.position.copy(p);
+                    
+                    // Add rotation during flight
+                    c.mesh.rotation.x+=.05;
+                    c.mesh.rotation.y+=.03;
+                }
+            }
+            
+            rend.render(scene,cam);
+        }
+        
+        // ========== RESET FUNCTION ==========
+        
+        function reset(){
+            // Get n value from input
+            n=parseInt(document.getElementById('nValue').value);
+            
+            // Stop any running animation
+            anim=false;
+            placed=[];
+            flying=[];
+            
+            // Re-enable start button
+            document.getElementById('animateBtn').disabled=false;
+            
+            // Clean up scene
+            if(scene){
+                while(scene.children.length>0)scene.remove(scene.children[0]);
+                scene=null;
+            }
+            if(rend){
+                rend.dispose();
+                rend=null;
+            }
+            
+            // Reinitialize
+            init();
+            document.getElementById('info').innerHTML='Click "Start Animation" to see the proof!';
+        }
+        
+        // ========== ANIMATION START ==========
+        
+        async function start(){
+            if(anim)return; // Prevent multiple simultaneous animations
+            
+            reset(); // Always reset before starting
+            await sleep(100); // Small delay for reset to complete
+            
+            anim=true;
+            document.getElementById('animateBtn').disabled=true;
+            placed=[];
+            flying=[];
+            
+            const s=(n*(n+1))/2; // Sum 1+2+...+n
+            
+            // Animate each cube from 1 to n
+            for(let i=1;i<=n;i++){
+                if(!anim)break; // Check if reset was called
+                
+                const col=colors[(i-1)%colors.length]; // Get color for this cube
+                
+                // Show message about creating cube
+                document.getElementById('info').innerHTML=
+                    `<span class="equation">Creating ${i}³ = ${i**3} unit cubes...</span>`;
+                
+                const cubes=makeCube(i,col); // Create i×i×i cube
+                await sleep(800);
+                
+                if(!anim)break;
+                
+                // Show message about moving cubes
+                document.getElementById('info').innerHTML=
+                    `<span class="equation">Moving ${i**3} cubes to the grid...</span>`;
+                
+                // Calculate target positions (gnomon/L-shape pattern)
+                const v=i**3; // Volume of this cube
+                const ps=(i-1)*i/2; // Previous square size
+                const ns=i*(i+1)/2; // New square size
+                const tgts=[];
+                let u=0;
+                
+                // Fill gnomon pattern (skip already-filled inner square)
+                for(let r=0;r<ns&&u<v;r++)
+                    for(let c=0;c<ns&&u<v;c++)
+                        if(!(r<ps&&c<ps)){
+                            tgts.push({
+                                pos:new THREE.Vector3(c+.5,.5,r+.5),
+                                col
+                            });
+                            u++;
+                        }
+                
+                // Launch cubes from source to targets
+                for(let j=0;j<Math.min(cubes.length,tgts.length);j++){
+                    if(!anim)break;
+                    
+                    const sc=cubes[j];
+                    const wp=new THREE.Vector3();
+                    sc.getWorldPosition(wp); // Get world position of source cube
+                    sc.visible=false; // Hide source cube (it's "flying" now)
+                    
+                    // Create flying cube
+                    const g=new THREE.BoxGeometry(1,1,1);
+                    const fm=new THREE.Mesh(g,new THREE.MeshPhongMaterial({color:col,shininess:100}));
+                    fm.add(new THREE.LineSegments(
+                        new THREE.EdgesGeometry(g),
+                        new THREE.LineBasicMaterial({color:0})
+                    ));
+                    fm.position.copy(wp);
+                    scene.add(fm);
+                    
+                    // Add to flying array
+                    flying.push({
+                        mesh:fm,
+                        start:wp.clone(),
+                        target:tgts[j].pos,
+                        progress:0,
+                        speed:.012,
+                        color:tgts[j].col
+                    });
+                    
+                    // Stagger cube launches slightly
+                    if(j%2===0)await sleep(40);
+                }
+                
+                // Wait for all cubes to land
+                while(flying.length>0&&anim)await sleep(100);
+                
+                if(!anim)break;
+                
+                // Clear source cube and update placed array
+                srcGrp.clear();
+                placed.push({size:i});
+                
+                // Show current progress
+                const tot=placed.reduce((a,b)=>a+b.size**3,0);
+                const ss=(i*(i+1))/2;
+                document.getElementById('info').innerHTML=
+                    `<span class="equation">Sum: 1³+2³+...+${i}³=${tot}</span><br>`+
+                    `<span class="equation">Square: (1+2+...+${i})²=${ss}²=${ss**2}</span>`;
+                
+                await sleep(1000);
+            }
+            
+            // Show completion message (if not interrupted)
+            if(anim){
+                document.getElementById('info').innerHTML=
+                    `<strong>✓ Proof Complete!</strong><br>`+
+                    `<span class="equation">1³+2³+...+${n}³=${placed.reduce((a,b)=>a+b.size**3,0)}</span><br>`+
+                    `<span class="equation">(1+2+...+${n})²=${s}²=${s**2}</span><br>`+
+                    `<span style="color:#666;">Each n×n×n cube dismantles into 1×1×1 cubes that perfectly fill the tangram-style square!</span>`;
+            }
+            
+            anim=false;
+            document.getElementById('animateBtn').disabled=false;
+        }
+        
+        // ========== INITIALIZE ON LOAD ==========
+        reset();
+    </script>
+</body>
+</html>
